@@ -1,0 +1,28 @@
+# agent 监控项目
+# name 监控脚本全名
+# timeout 超时时间单位秒，如果不设置，
+# 择使用全局超时时间
+
+# 全局配置
+[global]
+# 传输服务器和端口，多个传输服务器用";"分开
+trans_l=localhost:21002
+# 全局超时时间
+timeout=10
+# 多长时间检测一次任务列表（任务间隔时间要大于等于该时间）
+sleep=15
+
+[sysmon]
+name=sysmon.py
+interval=10
+timeout=10
+
+[sysmon2]
+name=sysmon.py
+interval=15
+timeout=10
+
+[sysmon3]
+name=sysmon.py
+interval=15
+timeout=10
