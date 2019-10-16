@@ -28,7 +28,8 @@ class STATE(object):
         # 已经收到的字节数
         self.have_read = 0
         self.have_write = 0
-        # 读写缓存
+
+        # 读写缓存区
         self.buff_read = ""
         self.buff_write = ""
         # socket 对象
@@ -92,6 +93,7 @@ class NetBase(object):
         '''创建状态机初始化状态
         STATE() 是初始状态，具体参考 STATE 类
         conn_state 是一个自定义的字典，用于存取每个 fd 的状态
+        把 sock 放进全局的 conn_state 字典里
         '''
         logging.info("setFD: crete init state")
         # 创建初始化状态
@@ -141,9 +143,10 @@ class NetBase(object):
                 return "retry"
 
     def read(self, fd):
-        '''读取数据 (appcet 执行完后，切换到 read 状态）
+        '''
+        非阻塞模式读取数据 (appcet 执行完后，切换到 read 状态）
         这里逻辑是这样的 先读 10 个字节头 根据 10 个字节头算出要接受数据的大小
-        然后在次进行读，一直到读完后返回状态 process
+        然后再次进行读，一直到读完后返回状态 process
         '''
         logging.info("read: start read data")
         # 根据传入的 fd 取出 socket
@@ -162,7 +165,7 @@ class NetBase(object):
             # 如果读取的结果为 0 有两种情况
             # 1 如 epoll 判断有数据需要接受但数据也没有发过来（如 tcp 校验失败）
             # 2 客户端关闭，tcp 也会发送一个空 FIN 文件过来（如果这种情况下不关闭会有问题
-            # 应为客户端关闭了，epoll 没有关闭信号，如果没有关闭连接进行处理，epoll 会认为
+            # 因为客户端关闭了，epoll 没有关闭信号，如果没有关闭连接进行处理，epoll 会认为
             # 这个事件没有处理，一直需要读这里就会一直读死循环，造成 cpu 100%)
             if len(one_read) == 0:
                 raise socket.error
@@ -206,7 +209,7 @@ class NetBase(object):
                 return "readmore"
 
         except socket.error as msg:
-            # 这里发生错误如客户端断开连接等要将状态及状态调整为 cloing，关闭连接
+            # 这里发生错误如客户端断开连接等要将状态及状态调整为 closing，关闭连接
             # 要单独处理 socket 11 错误时由于比如用户发送的 10 个字节头，但是后面没
             # 有数据停顿了还没有发过来，就会发生这种错误，还有就是非阻塞 socket 时，
             # 若读不到数据就会报这个错误，所以不需要特别处理
@@ -219,7 +222,7 @@ class NetBase(object):
             return "closing"
 
     def process(self, fd):
-        '''程序处方法使用传入的 logic 方法进行处理'''
+        '''使用传入的 logic 方法进行处理'''
         logging.info("proces: proces start")
         # 读取 socket
         sock_state = self.conn_state[fd]
@@ -278,9 +281,10 @@ class NetBase(object):
 
     def close(self, fd):
         '''关闭连接
+        关闭 fd，从 epoll 中取消注册，清理 conn_state 里相关的数据
         '''
         logging.info("close: close fd(%s)" % fd)
-        '''取消 epoll 注册，一定要先取消 epoll 注册，在关闭连接
+        '''取消 epoll 注册，一定要先取消 epoll 注册，再关闭连接
         因为 epoll 运行过快，会发生 socket 关闭，epoll 还没取消注册又收到信号的情况'''
         self.epoll_sock.unregister(fd)
         # 关闭 sock
@@ -296,6 +300,15 @@ class NetBase(object):
         while True:
             # epoll 对象哪些套接字在最近一次查询后又有新的需要注册的事件到来，然后根据状态及状态进行执行
             # 如果没有对象过来，epoll 就会阻塞在这里
+
+            # poll() 返回的 epoll_list 就是有事件发生的 fd 的 list
+            # 需要在循环中按照 event 的类型分别处理，一般分为以下几种类型
+            #  EPOLLIN ：表示对应的文件描述符可以读；
+            #  EPOLLOUT：表示对应的文件描述符可以写；
+            #  EPOLLPRI：表示对应的文件描述符有紧急的数据可读；一般不需要特殊处理
+            # 后面这两种需要关闭 socket
+            #  EPOLLERR：表示对应的文件描述符发生错误；
+            #  EPOLLHUP：表示对应的文件描述符被挂断；
             epoll_list = self.epoll_sock.poll()
             for fd, events in epoll_list:
                 logging.info("epoll: epoll find fd(%s) have signal" % fd)
@@ -307,6 +320,7 @@ class NetBase(object):
                 elif select.EPOLLERR & events:
                     sock_state.state = "closing"
                 logging.info("epoll: use state_machine process fd(%s)" % fd)
+                # 调用状态机
                 self.state_machine(fd)
 
     def check_fd(self):
