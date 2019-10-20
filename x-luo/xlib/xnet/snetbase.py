@@ -65,6 +65,19 @@ def bind_socket(addr, port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((addr, port))
+    """
+    # 最大连接数是最大能处理的连接数（accept了丢一边晾着是耍流氓）
+    # 提高并发处理能力是门学问，不单是提高“最大连接数”，两点结论：
+    #   1. backlog 不能提高“最大连接数”
+    #   2. backlog不宜设置过大
+    # 举个栗子，假设我们的服务器是一个非常受欢迎的饭店：
+    # 最大连接数就是这个饭店最大能容纳的顾客人数，backlog 就是门外允许排队的最大长度。
+    #
+    # 如果饭店点菜慢上菜也慢（服务器的处理不能满足要求），饭店将很快被被顾客坐满（最大连接数上限）
+    # ，门口排位如果无限排下去（backlog 设置非常大），可能还不如告诉顾客现在人太多了，我们处理不过来，不过等会儿再来试试。
+    #
+    # 想要提高服务质量只能通过提高翻桌率（服务器处理速度）来实现。
+    """
     sock.listen(10)
     return sock
 
